@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login to YouTube Automation Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f0f2f5;
+            color: #333;
+            line-height: 1.6;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            text-align: center;
+        }
+        .container {
+            max-width: 500px;
+            background-color: #fff;
+            padding: 40px;
+            border-radius: 12px;
+            box-shadow: 0 6px 20px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #2c3e50;
+            margin-bottom: 25px;
+            font-size: 2.2em;
+        }
+        p {
+            margin-bottom: 20px;
+            font-size: 1.1em;
+            color: #555;
+        }
+        .login-buttons {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            margin-top: 30px;
+        }
+        .login-button {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 12px 25px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1.1em;
+            font-weight: 600;
+            text-decoration: none;
+            color: white;
+            transition: background-color 0.3s ease, transform 0.2s ease, box-shadow 0.3s ease;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+        .login-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 12px rgba(0,0,0,0.15);
+        }
+        .login-button.google {
+            background-color: #dd4b39; /* Google Red */
+        }
+        .login-button.google:hover {
+            background-color: #c23321;
+        }
+        .login-button.twitter {
+            background-color: #1da1f2; /* Twitter Blue */
+        }
+        .login-button.twitter:hover {
+            background-color: #0c85d0;
+        }
+        .login-button img {
+            margin-right: 10px;
+            width: 24px;
+            height: 24px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Welcome to Your Automation Dashboard</h1>
+        <p>Please choose a service to log in and manage your content.</p>
+        <div class="login-buttons">
+            <a href="/auth/google" class="login-button google">
+                <img src="https://upload.wikimedia.org/wikipedia/commons/4/4a/Logo_Google_g_color_2015.png" alt="Google Logo">
+                Login with Google
+            </a>
+            <!-- Twitter login is not yet implemented on the backend -->
+            <a href="#" class="login-button twitter" onclick="alert('Twitter login is not yet implemented. Please use Google.'); return false;">
+                <img src="https://upload.wikimedia.org/wikipedia/commons/4/4f/Twitter-logo.png" alt="Twitter Logo">
+                Login with Twitter
+            </a>
+        </div>
+    </div>
+</body>
+</html>

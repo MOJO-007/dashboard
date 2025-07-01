@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My YouTube Videos Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; margin: 0; padding: 20px; background-color: #f0f2f5; color: #333; line-height: 1.6; }
+        .container { max-width: 960px; margin: 20px auto; background-color: #fff; padding: 30px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+        h1, h2, h3, h4 { color: #2c3e50; margin-bottom: 15px; }
+        p { margin-bottom: 10px; }
+        a { color: #3498db; text-decoration: none; transition: color 0.3s ease; }
+        a:hover { text-decoration: underline; }
+        button {
+            background-color: #2ecc71; /* Green for action */
+            color: white;
+            border: none;
+            padding: 8px 15px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.9em;
+            margin-top: 5px;
+            margin-right: 5px; /* Added for spacing between buttons */
+            transition: background-color 0.3s ease, transform 0.2s ease, box-shadow 0.3s ease;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        button:hover {
+            background-color: #27ae60;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+        }
+        button:active {
+            transform: translateY(0);
+            box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+        }
+        .comment-item {
+            background-color: #f0f8ff; /* Light blue for comments */
+            border: 1px solid #e0eaff;
+            padding: 12px;
+            margin-bottom: 8px;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        }
+        .comment-item strong { color: #2980b9; }
+        .comment-item span { font-size: 0.85em; color: #7f8c8d; }
+        .analysis-result {
+            margin-top: 10px;
+            padding: 10px;
+            background-color: #fff3cd; /* Light yellow for analysis */
+            border: 1px solid #ffeeba;
+            border-radius: 5px;
+            color: #856404;
+            font-size: 0.9em;
+        }
+        .reply-input-area {
+            margin-top: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+        .reply-input-area textarea {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            resize: vertical;
+            min-height: 60px;
+        }
+        .reply-input-area .action-buttons {
+            display: flex;
+            justify-content: flex-end;
+            gap: 5px;
+        }
+        .reply-input-area .action-buttons button {
+            margin-top: 0;
+        }
+        .replies-container {
+            margin-top: 10px;
+            padding-left: 20px;
+            border-left: 2px solid #ccc;
+        }
+        .reply-item {
+            background-color: #eaf7ff;
+            border: 1px solid #d0eaff;
+            padding: 8px;
+            margin-bottom: 5px;
+            border-radius: 5px;
+            font-size: 0.9em;
+        }
+        .reply-item strong { color: #1a73e8; }
+        .profile-info { display: flex; align-items: center; margin-bottom: 20px; }
+        .profile-info img { margin-right: 15px; border: 2px solid #3498db; border-radius: 50%; }
+        .automation-section {
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid #eee;
+        }
+        .automation-section form {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            align-items: center;
+        }
+        .automation-section form input[type="text"] {
+            flex-grow: 1;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 1em;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Your YouTube Dashboard</h1>
+        <div id="user-profile">
+            <!-- User profile info will be loaded here by JavaScript -->
+            Loading profile...
+        </div>
+        <hr>
+
+        <div id="video-list-container">
+            <!-- Video list will be loaded here by JavaScript -->
+            Loading videos...
+        </div>
+
+        <hr class="automation-section">
+        <div class="automation-section">
+            <h2>Automatic Comment Automation (Background)</h2>
+            <p>You can start/stop automatic comment automation for a specific video. This will periodically check for new comments on the video and reply automatically.</p>
+            <form id="automation-form">
+                <label for="autoVideoId">Video ID for Automation:</label>
+                <input type="text" id="autoVideoId" name="videoId" placeholder="e.g., dQw4w9WgXcQ" required>
+                <button type="submit" id="start-automation-btn" style="background-color: #2ecc71;">Start Automation</button>
+                <button type="button" id="stop-automation-btn" style="background-color: #e74c3c;">Stop Automation</button>
+            </form>
+            <p id="automation-status"></p>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', async () => {
+            await loadUserProfile();
+            await loadVideosAndComments();
+            setupAutomationButtons();
+        });
+
+        async function loadUserProfile() {
+            const userProfileDiv = document.getElementById('user-profile');
+            try {
+                const response = await fetch('/auth/current_user');
+                if (!response.ok) {
+                    throw new Error('Not authenticated or session expired.');
+                }
+                const user = await response.json();
+                userProfileDiv.innerHTML = `
+                    <div class="profile-info">
+                        ${user.photo ? `<img src="${user.photo}" alt="Profile Picture" width="60" height="60">` : ''}
+                        <div>
+                            <p>Hello, <strong>${user.displayName}</strong>!</p>
+                            ${user.email ? `<p>Email: ${user.email}</p>` : ''}
+                            <p><a href="/auth/logout">Logout</a></p>
+                        </div>
+                    </div>
+                `;
+            } catch (error) {
+                console.error('Error loading user profile:', error);
+                userProfileDiv.innerHTML = `<p style="color: red;">Failed to load profile. Please <a href="/auth/google">log in again</a>.</p>`;
+            }
+        }
+
+        async function loadVideosAndComments() {
+            const videoListContainer = document.getElementById('video-list-container');
+            videoListContainer.innerHTML = 'Loading your YouTube videos...';
+
+            try {
+                const response = await fetch('/api/my-videos-data'); // New endpoint for video data
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || 'Failed to fetch videos.');
+                }
+                const videos = await response.json();
+
+                if (videos.length === 0) {
+                    videoListContainer.innerHTML = '<p>No videos found on your channel.</p>';
+                } else {
+                    let videosHtml = '<h2>Your Uploaded Videos</h2><ul style="list-style: none; padding: 0;">';
+                    videos.forEach(video => {
+                        const videoId = video.snippet.resourceId.videoId;
+                        const title = video.snippet.title;
+                        const thumbnailUrl = video.snippet.thumbnails.medium ? video.snippet.thumbnails.medium.url : 'https://placehold.co/120x90/cccccc/333333?text=No+Thumbnail';
+
+                        videosHtml += `
+                            <li style="margin-bottom: 20px; border: 1px solid #ddd; padding: 10px; border-radius: 8px; display: flex; align-items: center; background-color: #fcfcfc;">
+                                <img src="${thumbnailUrl}" alt="${title}" style="width: 120px; height: 90px; margin-right: 15px; border-radius: 4px;">
+                                <div>
+                                    <h3>${title}</h3>
+                                    <p>Video ID: ${videoId}</p>
+                                    <a href="https://www.youtube.com/watch?v=${videoId}" target="_blank" style="color: #007bff; text-decoration: none;">Watch on YouTube</a>
+                                    <br>
+                                    <button onclick="fetchAndDisplayComments('${videoId}', this)" style="margin-top: 8px;">Show Comments</button>
+                                    <div id="comments-${videoId}" style="margin-top: 10px; border-top: 1px dashed #eee; padding-top: 10px; display: none;">
+                                        Loading comments...
+                                    </div>
+                                </div>
+                            </li>
+                        `;
+                    });
+                    videosHtml += '</ul>';
+                    videoListContainer.innerHTML = videosHtml;
+                }
+            } catch (error) {
+                console.error('Error loading videos:', error);
+                videoListContainer.innerHTML = `<p style="color: red;">Failed to load videos: ${error.message}. Please try again later.</p>`;
+            }
+        }
+
+        // Function to fetch and display comments
+        async function fetchAndDisplayComments(videoId, buttonElement) {
+            const commentsDiv = document.getElementById(`comments-${videoId}`);
+            const isVisible = commentsDiv.style.display === 'block';
+
+            if (isVisible) {
+                commentsDiv.style.display = 'none';
+                buttonElement.textContent = 'Show Comments';
+                return;
+            }
+
+            commentsDiv.style.display = 'block';
+            commentsDiv.innerHTML = 'Loading comments...';
+            buttonElement.textContent = 'Loading...';
+            buttonElement.disabled = true;
+
+            try {
+                const response = await fetch(`/api/comments/${videoId}`);
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`HTTP error! status: ${response.status}. Details: ${errorText}`);
+                }
+                const comments = await response.json();
+
+                if (comments.length === 0) {
+                    commentsDiv.innerHTML = '<p>No comments found for this video.</p>';
+                } else {
+                    let commentsHtml = '<h4>Comments:</h4>';
+                    comments.forEach(commentThread => {
+                        const topLevelComment = commentThread.snippet.topLevelComment;
+                        const commentId = topLevelComment.id;
+                        const author = topLevelComment.snippet.authorDisplayName;
+                        const text = topLevelComment.snippet.textOriginal;
+                        const publishedAt = new Date(topLevelComment.snippet.publishedAt).toLocaleString();
+
+                        commentsHtml += `
+                            <div class="comment-item">
+                                <strong>${author}</strong> <span style="font-size: 0.8em; color: #666;">(${publishedAt})</span>
+                                <p id="comment-text-${commentId}">${text}</p>
+                                <button onclick="analyzeComment('${commentId}')" style="background-color: #007bff;">Analyze</button>
+                                <button id="reply-button-${commentId}" onclick="toggleReplyInput('${commentId}', '${videoId}')" style="background-color: #ffc107; color: #333;">Reply</button>
+                                <button id="show-replies-button-${commentId}" onclick="toggleReplies('${commentId}', this)" style="background-color: #607d8b;">Show Replies</button>
+                                <div id="analysis-result-${commentId}" class="analysis-result" style="display: none;"></div>
+                                <div id="reply-input-${commentId}" class="reply-input-area" style="display: none;">
+                                    <textarea id="reply-textarea-${commentId}" placeholder="Type your reply here..."></textarea>
+                                    <div class="action-buttons">
+                                        <button onclick="postReply('${commentId}')" style="background-color: #28a745;">Post Reply</button>
+                                        <button onclick="toggleReplyInput('${commentId}', '${videoId}')" style="background-color: #6c757d;">Cancel</button>
+                                    </div>
+                                </div>
+                                <div id="replies-container-${commentId}" class="replies-container" style="display: none;">
+                                    Loading replies...
+                                </div>
+                            </div>
+                        `;
+                    });
+                    commentsDiv.innerHTML = commentsHtml;
+                }
+            } catch (error) {
+                console.error('Error fetching comments:', error);
+                commentsDiv.innerHTML = `<p style="color: red;">Failed to load comments: ${error.message}. Please try again later.</p>`;
+            } finally {
+                buttonElement.textContent = 'Hide Comments';
+                buttonElement.disabled = false;
+            }
+        }
+
+        // Function to analyze a comment
+        async function analyzeComment(commentId) {
+            const commentText = document.getElementById(`comment-text-${commentId}`).textContent;
+            const analysisResultDiv = document.getElementById(`analysis-result-${commentId}`);
+            analysisResultDiv.style.display = 'block';
+            analysisResultDiv.innerHTML = 'Analyzing...';
+
+            try {
+                const response = await fetch('/api/analyze-comment', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ commentText: commentText })
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(`HTTP error! status: ${response.status}. Details: ${errorData.error || response.statusText}`);
+                }
+
+                const result = await response.json();
+                analysisResultDiv.innerHTML = `<strong>Sentiment:</strong> ${result.sentiment} (Score: ${result.score})<br><strong>Analysis:</strong> ${result.analysis}`;
+            } catch (error) {
+                console.error('Error analyzing comment:', error);
+                analysisResultDiv.innerHTML = `<p style="color: red;">Analysis failed: ${error.message}</p>`;
+            }
+        }
+
+        // Function to toggle reply input field
+        function toggleReplyInput(commentId, videoId) {
+            const replyInputArea = document.getElementById(`reply-input-${commentId}`);
+            const replyButton = document.getElementById(`reply-button-${commentId}`);
+            const replyTextarea = document.getElementById(`reply-textarea-${commentId}`);
+
+            if (replyInputArea.style.display === 'flex') {
+                replyInputArea.style.display = 'none';
+                replyTextarea.value = '';
+                delete replyTextarea.dataset.videoId;
+                replyButton.textContent = 'Reply';
+            } else {
+                replyInputArea.style.display = 'flex';
+                replyTextarea.focus();
+                replyTextarea.dataset.videoId = videoId;
+                replyButton.textContent = 'Hide Reply';
+            }
+        }
+
+        // Function to post a reply
+        async function postReply(commentId) {
+            const replyTextarea = document.getElementById(`reply-textarea-${commentId}`);
+            const replyText = replyTextarea.value;
+            const videoId = replyTextarea.dataset.videoId;
+
+            console.log('DEBUG (client-side postReply): commentId:', commentId);
+            console.log('DEBUG (client-side postReply): replyText (raw):', '"' + replyText + '"');
+            console.log('DEBUG (client-side postReply): replyText (trimmed length):', replyText.trim().length);
+            console.log('DEBUG (client-side postReply): videoId:', videoId);
+
+            if (!replyText.trim()) {
+                alert('Reply cannot be empty.');
+                return;
+            }
+            if (!videoId) {
+                alert('Video ID not found for this comment. Cannot post reply.');
+                return;
+            }
+
+            const replyInputArea = document.getElementById(`reply-input-${commentId}`);
+            const postButton = replyInputArea.querySelector('button[onclick^="postReply"]');
+            const originalButtonText = postButton.textContent;
+            postButton.textContent = 'Posting...';
+            postButton.disabled = true;
+
+            try {
+                const response = await fetch('/api/reply-comment', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Video-Id': videoId
+                    },
+                    body: JSON.stringify({ commentId: commentId, replyText: replyText })
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(`HTTP error! status: ${response.status}. Details: ${errorData.error || response.statusText}`);
+                }
+
+                alert('Reply posted successfully!');
+                toggleReplyInput(commentId, videoId);
+            } catch (error) {
+                console.error('Error posting reply:', error);
+                alert(`Failed to post reply: ${error.message}`);
+            } finally {
+                postButton.textContent = originalButtonText;
+                postButton.disabled = false;
+            }
+        }
+
+        // Function to toggle replies visibility
+        async function toggleReplies(commentId, buttonElement) {
+            const repliesContainer = document.getElementById(`replies-container-${commentId}`);
+            const isVisible = repliesContainer.style.display === 'block';
+
+            if (isVisible) {
+                repliesContainer.style.display = 'none';
+                buttonElement.textContent = 'Show Replies';
+                return;
+            }
+
+            repliesContainer.style.display = 'block';
+            repliesContainer.innerHTML = 'Loading replies...';
+            buttonElement.textContent = 'Loading...';
+            buttonElement.disabled = true;
+
+            try {
+                const response = await fetch(`/api/replies/${commentId}`);
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`HTTP error! status: ${response.status}. Details: ${errorText}`);
+                }
+                const replies = await response.json();
+
+                if (replies.length === 0) {
+                    repliesContainer.innerHTML = '<p>No replies found for this comment.</p>';
+                } else {
+                    let repliesHtml = '<h5>Replies:</h5>';
+                    replies.forEach(reply => {
+                        const author = reply.snippet.authorDisplayName;
+                        const text = reply.snippet.textOriginal;
+                        const publishedAt = new Date(reply.snippet.publishedAt).toLocaleString();
+
+                        repliesHtml += `
+                            <div class="reply-item">
+                                <strong>${author}</strong> <span style="font-size: 0.8em; color: #666;">(${publishedAt})</span>
+                                <p>${text}</p>
+                            </div>
+                        `;
+                    });
+                    repliesContainer.innerHTML = repliesHtml;
+                }
+            } catch (error) {
+                console.error('Error fetching replies:', error);
+                repliesContainer.innerHTML = `<p style="color: red;">Failed to load replies: ${error.message}.</p>`;
+            } finally {
+                buttonElement.textContent = 'Hide Replies';
+                buttonElement.disabled = false;
+            }
+        }
+
+        function setupAutomationButtons() {
+            const automationForm = document.getElementById('automation-form');
+            const startBtn = document.getElementById('start-automation-btn');
+            const stopBtn = document.getElementById('stop-automation-btn');
+            const videoIdInput = document.getElementById('autoVideoId');
+            const statusDiv = document.getElementById('automation-status');
+
+            automationForm.addEventListener('submit', async (event) => {
+                event.preventDefault();
+                const videoId = videoIdInput.value;
+                statusDiv.textContent = 'Starting automation...';
+                try {
+                    const response = await fetch(`/start-automation?videoId=${videoId}`);
+                    const text = await response.text();
+                    if (!response.ok) throw new Error(text);
+                    statusDiv.textContent = `Automation status: ${text}`;
+                } catch (error) {
+                    statusDiv.textContent = `Error starting automation: ${error.message}`;
+                    console.error('Error starting automation:', error);
+                }
+            });
+
+            stopBtn.addEventListener('click', async () => {
+                statusDiv.textContent = 'Stopping automation...';
+                try {
+                    const response = await fetch('/stop-automation');
+                    const text = await response.text();
+                    if (!response.ok) throw new Error(text);
+                    statusDiv.textContent = `Automation status: ${text}`;
+                } catch (error) {
+                    statusDiv.textContent = `Error stopping automation: ${error.message}`;
+                    console.error('Error stopping automation:', error);
+                }
+            });
+        }
+
+    </script>
+</body>
+</html>
