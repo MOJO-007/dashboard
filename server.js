@@ -9,11 +9,13 @@ const session = require('express-session');
 const authRouter = require('./routes/auth');
 const { userAccessTokens } = authRouter; // Destructure userAccessTokens from the exported module
 
-// Import your automation logic
+// Import your automation logic (still used for the 'Start Automation' button)
 const commentAutomator = require('./automation/commentAutomator');
 
 // Import the youtubeApi service
 const youtubeApi = require('./services/youtubeApi');
+// Import the geminiApi service (optional, only if you want AI analysis/replies)
+const geminiApi = require('./services/geminiApi');
 
 // Load Passport strategies
 require('./config/google');
@@ -21,12 +23,14 @@ require('./config/google');
 
 const app = express();
 
+// --- Middleware Setup ---
+// Parse JSON request bodies (needed for new API endpoints)
+app.use(express.json());
+
 // --- Temporary In-Memory User Store (NOT FOR PRODUCTION) ---
 // In a real application, you would use a database (e.g., MongoDB, PostgreSQL)
 // to store and retrieve user data persistently. This is just for demonstration.
 const users = {}; // Stores user objects by ID
-
-// Middleware Setup Order is CRUCIAL:
 
 // 1. express-session MUST come before passport.initialize() and passport.session()
 app.use(session({
@@ -82,8 +86,7 @@ function ensureAuthenticated(req, res, next) {
   res.redirect('/auth/google');
 }
 
-// --- Automation Routes ---
-// Route to start YouTube comment automation
+// --- Automation Routes (still available, but moved from main dashboard UI) ---
 app.get('/start-automation', ensureAuthenticated, (req, res) => {
   const videoId = req.query.videoId; // Get video ID from query parameter
   const accessToken = userAccessTokens[req.user.id]; // Retrieve token for current user
@@ -104,13 +107,12 @@ app.get('/start-automation', ensureAuthenticated, (req, res) => {
   }
 });
 
-// Route to stop YouTube comment automation
 app.get('/stop-automation', (req, res) => {
   commentAutomator.stopMonitoring();
   res.send('Automation stopped.');
 });
 
-// --- NEW ROUTE: Display My YouTube Videos and Comments Dashboard ---
+// --- Dashboard for My YouTube Videos and Comments ---
 app.get('/my-videos', ensureAuthenticated, async (req, res) => {
     const accessToken = userAccessTokens[req.user.id];
 
@@ -119,9 +121,7 @@ app.get('/my-videos', ensureAuthenticated, async (req, res) => {
     }
 
     try {
-        // Fetch the authenticated user's channel ID
         const channelId = await youtubeApi.getMyChannelId(accessToken);
-        // Fetch videos uploaded by that channel
         const videos = await youtubeApi.fetchMyVideos(accessToken, channelId);
 
         let videosHtml = '<h2>Your Uploaded Videos</h2>';
@@ -130,7 +130,6 @@ app.get('/my-videos', ensureAuthenticated, async (req, res) => {
         } else {
             videosHtml += '<ul style="list-style: none; padding: 0;">';
             for (const video of videos) {
-                // Extract video ID, title, and thumbnail URL
                 const videoId = video.snippet.resourceId.videoId;
                 const title = video.snippet.title;
                 const thumbnailUrl = video.snippet.thumbnails.medium ? video.snippet.thumbnails.medium.url : 'https://placehold.co/120x90/cccccc/333333?text=No+Thumbnail';
@@ -154,7 +153,6 @@ app.get('/my-videos', ensureAuthenticated, async (req, res) => {
             videosHtml += '</ul>';
         }
 
-        // Render the HTML page
         res.send(`
             <!DOCTYPE html>
             <html lang="en">
@@ -169,15 +167,17 @@ app.get('/my-videos', ensureAuthenticated, async (req, res) => {
                     h1, h2, h3, h4 { color: #2c3e50; margin-bottom: 15px; }
                     p { margin-bottom: 10px; }
                     a { color: #3498db; text-decoration: none; transition: color 0.3s ease; }
-                    a:hover { color: #217dbb; text-decoration: underline; }
+                    a:hover { text-decoration: underline; }
                     button {
                         background-color: #2ecc71; /* Green for action */
                         color: white;
                         border: none;
-                        padding: 10px 20px;
+                        padding: 8px 15px;
                         border-radius: 6px;
                         cursor: pointer;
-                        font-size: 1em;
+                        font-size: 0.9em;
+                        margin-top: 5px;
+                        margin-right: 5px; /* Added for spacing between buttons */
                         transition: background-color 0.3s ease, transform 0.2s ease;
                         box-shadow: 0 2px 4px rgba(0,0,0,0.1);
                     }
@@ -199,6 +199,33 @@ app.get('/my-videos', ensureAuthenticated, async (req, res) => {
                     }
                     .comment-item strong { color: #2980b9; }
                     .comment-item span { font-size: 0.85em; color: #7f8c8d; }
+                    .analysis-result {
+                        margin-top: 10px;
+                        padding: 10px;
+                        background-color: #fff3cd; /* Light yellow for analysis */
+                        border: 1px solid #ffeeba;
+                        border-radius: 5px;
+                        color: #856404;
+                        font-size: 0.9em;
+                    }
+                    .reply-input-area {
+                        margin-top: 10px;
+                        display: flex;
+                        flex-direction: column;
+                        gap: 5px;
+                    }
+                    .reply-input-area textarea {
+                        width: 100%;
+                        padding: 8px;
+                        border: 1px solid #ccc;
+                        border-radius: 4px;
+                        resize: vertical;
+                        min-height: 60px;
+                    }
+                    .reply-input-area button {
+                        align-self: flex-end;
+                        margin-top: 0;
+                    }
                 </style>
             </head>
             <body>
@@ -209,6 +236,7 @@ app.get('/my-videos', ensureAuthenticated, async (req, res) => {
                 </div>
 
                 <script>
+                    // Function to fetch and display comments
                     async function fetchAndDisplayComments(videoId, buttonElement) {
                         const commentsDiv = document.getElementById(\`comments-\${videoId}\`);
                         const isVisible = commentsDiv.style.display === 'block';
@@ -225,10 +253,8 @@ app.get('/my-videos', ensureAuthenticated, async (req, res) => {
                         buttonElement.disabled = true;
 
                         try {
-                            // Make a fetch request to your server to get comments
                             const response = await fetch(\`/api/comments/\${videoId}\`);
                             if (!response.ok) {
-                                // Attempt to read error message from response
                                 const errorText = await response.text();
                                 throw new Error(\`HTTP error! status: \${response.status}. Details: \${errorText}\`);
                             }
@@ -240,6 +266,7 @@ app.get('/my-videos', ensureAuthenticated, async (req, res) => {
                                 let commentsHtml = '<h4>Comments:</h4>';
                                 comments.forEach(commentThread => {
                                     const topLevelComment = commentThread.snippet.topLevelComment;
+                                    const commentId = topLevelComment.id;
                                     const author = topLevelComment.snippet.authorDisplayName;
                                     const text = topLevelComment.snippet.textOriginal;
                                     const publishedAt = new Date(topLevelComment.snippet.publishedAt).toLocaleString();
@@ -247,11 +274,17 @@ app.get('/my-videos', ensureAuthenticated, async (req, res) => {
                                     commentsHtml += \`
                                         <div class="comment-item">
                                             <strong>\${author}</strong> <span style="font-size: 0.8em; color: #666;">(\${publishedAt})</span>
-                                            <p>\${text}</p>
+                                            <p id="comment-text-\${commentId}">\${text}</p>
+                                            <button onclick="analyzeComment('\${commentId}')" style="background-color: #007bff;">Analyze</button>
+                                            <button onclick="showReplyInput('\${commentId}', '\${videoId}')" style="background-color: #ffc107; color: #333;">Reply</button>
+                                            <div id="analysis-result-\${commentId}" class="analysis-result" style="display: none;"></div>
+                                            <div id="reply-input-\${commentId}" class="reply-input-area" style="display: none;">
+                                                <textarea id="reply-textarea-\${commentId}" placeholder="Type your reply here..."></textarea>
+                                                <button onclick="postReply('\${commentId}')" style="background-color: #28a745;">Post Reply</button>
+                                                <button onclick="hideReplyInput('\${commentId}')" style="background-color: #6c757d;">Cancel</button>
+                                            </div>
                                         </div>
                                     \`;
-                                    // You can add logic here to display replies as well if needed
-                                    // commentThread.replies.comments (if 'replies' part is requested)
                                 });
                                 commentsDiv.innerHTML = commentsHtml;
                             }
@@ -261,6 +294,100 @@ app.get('/my-videos', ensureAuthenticated, async (req, res) => {
                         } finally {
                             buttonElement.textContent = 'Hide Comments';
                             buttonElement.disabled = false;
+                        }
+                    }
+
+                    // Function to analyze a comment
+                    async function analyzeComment(commentId) {
+                        const commentText = document.getElementById(\`comment-text-\${commentId}\`).textContent;
+                        const analysisResultDiv = document.getElementById(\`analysis-result-\${commentId}\`);
+                        analysisResultDiv.style.display = 'block';
+                        analysisResultDiv.innerHTML = 'Analyzing...';
+
+                        try {
+                            const response = await fetch('/api/analyze-comment', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ commentText: commentText })
+                            });
+
+                            if (!response.ok) {
+                                const errorData = await response.json();
+                                throw new Error(\`HTTP error! status: \${response.status}. Details: \${errorData.error || response.statusText}\`);
+                            }
+
+                            const result = await response.json();
+                            // Display sentiment score and analysis
+                            analysisResultDiv.innerHTML = \`<strong>Sentiment:</strong> \${result.sentiment} (Score: \${result.score})<br><strong>Analysis:</strong> \${result.analysis}\`;
+                        } catch (error) {
+                            console.error('Error analyzing comment:', error);
+                            analysisResultDiv.innerHTML = \`<p style="color: red;">Analysis failed: \${error.message}</p>\`;
+                        }
+                    }
+
+                    // Function to show reply input field, now also passes videoId
+                    function showReplyInput(commentId, videoId) {
+                        const replyInputArea = document.getElementById(\`reply-input-\${commentId}\`);
+                        replyInputArea.style.display = 'flex';
+                        document.getElementById(\`reply-textarea-\${commentId}\`).focus();
+                        // Store videoId on the textarea for easy access in postReply
+                        document.getElementById(\`reply-textarea-\${commentId}\`).dataset.videoId = videoId;
+                    }
+
+                    // Function to hide reply input field
+                    function hideReplyInput(commentId) {
+                        const replyInputArea = document.getElementById(\`reply-input-\${commentId}\`);
+                        replyInputArea.style.display = 'none';
+                        document.getElementById(\`reply-textarea-\${commentId}\`).value = ''; // Clear text
+                        delete document.getElementById(\`reply-textarea-\${commentId}\`).dataset.videoId; // Clean up stored videoId
+                    }
+
+                    // Function to post a reply, now takes videoId
+                    async function postReply(commentId) {
+                        const replyTextarea = document.getElementById(\`reply-textarea-\${commentId}\`);
+                        const replyText = replyTextarea.value;
+                        const videoId = replyTextarea.dataset.videoId; // Get videoId from dataset
+
+                        if (!replyText.trim()) {
+                            alert('Reply cannot be empty.'); // Using alert here for simplicity, consider a custom modal
+                            return;
+                        }
+                        if (!videoId) {
+                            alert('Video ID not found for this comment. Cannot post reply.');
+                            return;
+                        }
+
+                        const replyInputArea = document.getElementById(\`reply-input-\${commentId}\`);
+                        const postButton = replyInputArea.querySelector('button[onclick^="postReply"]');
+                        const originalButtonText = postButton.textContent;
+                        postButton.textContent = 'Posting...';
+                        postButton.disabled = true;
+
+                        try {
+                            const response = await fetch('/api/reply-comment', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                    'X-Video-Id': videoId // Pass videoId in a custom header
+                                },
+                                body: JSON.stringify({ commentId: commentId, replyText: replyText })
+                            });
+
+                            if (!response.ok) {
+                                const errorData = await response.json();
+                                throw new Error(\`HTTP error! status: \${response.status}. Details: \${errorData.error || response.statusText}\`);
+                            }
+
+                            alert('Reply posted successfully!'); // Using alert here for simplicity, consider a custom modal
+                            hideReplyInput(commentId); // Hide input after successful post
+                            // Optionally, refresh comments for the video to see the new reply
+                            // You might need to re-fetch comments for the video here
+                        } catch (error) {
+                            console.error('Error posting reply:', error);
+                            alert(\`Failed to post reply: \${error.message}\`); // Using alert here for simplicity, consider a custom modal
+                        } finally {
+                            postButton.textContent = originalButtonText;
+                            postButton.disabled = false;
                         }
                     }
                 </script>
@@ -296,7 +423,6 @@ app.get('/my-videos', ensureAuthenticated, async (req, res) => {
                         <li>Your YouTube channel does not have any public videos.</li>
                         <li>API rate limits being exceeded.</li>
                     </ul>
-                    <p>Please ensure you are logged in with the correct Google account and have granted all requested permissions.</p>
                     <p>Error details: ${error.message}</p>
                     <p><a href="/">Go back to Home</a></p>
                 </div>
@@ -306,8 +432,7 @@ app.get('/my-videos', ensureAuthenticated, async (req, res) => {
     }
 });
 
-// --- NEW API ROUTE: To fetch comments dynamically via AJAX ---
-// This route is called by the client-side JavaScript on the /my-videos page
+// --- API ROUTE: To fetch comments dynamically via AJAX ---
 app.get('/api/comments/:videoId', ensureAuthenticated, async (req, res) => {
     const videoId = req.params.videoId;
     const accessToken = userAccessTokens[req.user.id];
@@ -322,6 +447,83 @@ app.get('/api/comments/:videoId', ensureAuthenticated, async (req, res) => {
     } catch (error) {
         console.error(`Error fetching comments for video ${videoId}:`, error);
         res.status(500).json({ error: 'Failed to fetch comments.' });
+    }
+});
+
+// --- NEW API ROUTE: To analyze a comment using Gemini API ---
+app.post('/api/analyze-comment', ensureAuthenticated, async (req, res) => {
+    const { commentText } = req.body;
+    // accessToken is not strictly needed for Gemini API calls here, as it's a server-to-server call.
+    // However, ensure your Gemini API key is correctly configured in services/geminiApi.js.
+
+    if (!commentText) {
+        return res.status(400).json({ error: 'Comment text is required for analysis.' });
+    }
+    if (!geminiApi || typeof geminiApi.generateText !== 'function') {
+        return res.status(500).json({ error: 'Gemini API service not available or not correctly configured.' });
+    }
+
+    try {
+        // Updated prompt to specifically ask for sentiment and a score
+        const analysisPrompt = `Perform a sentiment analysis on the following YouTube comment. Provide a sentiment label (e.g., "Positive", "Negative", "Neutral", "Mixed") and a sentiment score on a scale of -1.0 (very negative) to 1.0 (very positive). Also, provide a brief explanation of the sentiment.
+        
+        Comment: "${commentText}"
+        
+        Format your response as:
+        Sentiment: [Label]
+        Score: [Score]
+        Explanation: [Brief explanation]`;
+
+        const rawAnalysisResult = await geminiApi.generateText(analysisPrompt);
+
+        // Attempt to parse the structured response from Gemini
+        let sentiment = 'N/A';
+        let score = 'N/A';
+        let explanation = 'Could not parse analysis.';
+
+        const sentimentMatch = rawAnalysisResult.match(/Sentiment: (.+)/);
+        if (sentimentMatch && sentimentMatch[1]) {
+            sentiment = sentimentMatch[1].trim();
+        }
+
+        const scoreMatch = rawAnalysisResult.match(/Score: (.+)/);
+        if (scoreMatch && scoreMatch[1]) {
+            score = parseFloat(scoreMatch[1].trim());
+            if (isNaN(score)) score = 'N/A';
+        }
+
+        const explanationMatch = rawAnalysisResult.match(/Explanation: (.+)/s); // /s for dotall to match across newlines
+        if (explanationMatch && explanationMatch[1]) {
+            explanation = explanationMatch[1].trim();
+        }
+
+        res.json({ sentiment: sentiment, score: score, analysis: explanation });
+    } catch (error) {
+        console.error('Error analyzing comment:', error);
+        res.status(500).json({ error: 'Failed to analyze comment.' });
+    }
+});
+
+// --- NEW API ROUTE: To post a reply to a comment ---
+app.post('/api/reply-comment', ensureAuthenticated, async (req, res) => {
+    const { commentId, replyText } = req.body;
+    const accessToken = userAccessTokens[req.user.id];
+    // Retrieve videoId from a custom header sent by the client
+    const videoId = req.headers['x-video-id'];
+
+    if (!commentId || !replyText || !videoId) {
+        return res.status(400).json({ error: 'Comment ID, reply text, and video ID are required.' });
+    }
+    if (!accessToken) {
+        return res.status(401).json({ error: 'Access token not found. Please re-authenticate.' });
+    }
+
+    try {
+        await youtubeApi.postComment(accessToken, videoId, replyText, commentId);
+        res.json({ message: 'Reply posted successfully!' });
+    } catch (error) {
+        console.error('Error posting reply:', error);
+        res.status(500).json({ error: 'Failed to post reply.' });
     }
 });
 
@@ -396,19 +598,19 @@ app.get('/', (req, res) => {
 
             ${loggedIn ? `
                 <hr>
-                <h2>Comment Automation</h2>
-                <p>Start automating replies to comments on your YouTube videos.</p>
-                <form action="/start-automation" method="GET">
-                    <label for="videoId">Video ID:</label>
-                    <input type="text" id="videoId" name="videoId" placeholder="e.g., dQw4w9WgXcQ" required>
-                    <button type="submit">Start Automation</button>
-                </form>
-                <p><a href="/stop-automation"><button style="background-color: #e74c3c;">Stop Automation</button></a></p>
+                <h2>My Videos & Comments</h2>
+                <p>View your uploaded videos and their comments on a dedicated dashboard, and manage replies manually.</p>
+                <p><a href="/my-videos"><button>Go to My Videos Dashboard</button></a></p>
 
                 <hr>
-                <h2>My Videos & Comments</h2>
-                <p>View your uploaded videos and their comments on a dedicated dashboard.</p>
-                <p><a href="/my-videos"><button>Go to My Videos Dashboard</button></a></p>
+                <h2>Automatic Comment Automation (Background)</h2>
+                <p>You can still start the automatic comment automation in the background if desired. This will periodically check for new comments on a specified video and reply automatically.</p>
+                <form action="/start-automation" method="GET">
+                    <label for="autoVideoId">Video ID for Automation:</label>
+                    <input type="text" id="autoVideoId" name="videoId" placeholder="e.g., dQw4w9WgXcQ" required>
+                    <button type="submit">Start Automatic Automation</button>
+                </form>
+                <p><a href="/stop-automation"><button style="background-color: #e74c3c;">Stop Automatic Automation</button></a></p>
             ` : '<p>Please log in to manage YouTube features.</p>'}
         </div>
     </body>

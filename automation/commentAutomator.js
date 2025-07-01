@@ -47,6 +47,7 @@ async function checkForNewComments(accessToken, videoId) {
             // If Gemini API is integrated, try to generate a more intelligent reply
             if (geminiApi && typeof geminiApi.generateText === 'function') {
                 try {
+                    // Prompt the LLM to generate a more intelligent reply
                     replyText = await geminiApi.generateText(`Write a concise, friendly, and appreciative reply to the following YouTube comment on my video: "${commentText}"`);
                 } catch (llmError) {
                     console.error('Error generating reply with Gemini API, using default reply:', llmError);

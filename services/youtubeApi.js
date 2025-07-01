@@ -16,6 +16,8 @@ const YOUTUBE_API_BASE_URL = 'https://www.googleapis.com/youtube/v3';
  * @returns {Promise<Array>} A promise that resolves to an array of commentThread resources.
  */
 async function fetchComments(accessToken, videoId) {
+    // Requesting 'snippet' part for basic comment info.
+    // maxResults can be up to 100.
     const url = `${YOUTUBE_API_BASE_URL}/commentThreads?part=snippet&videoId=${videoId}&maxResults=100`;
     try {
         const response = await fetch(url, {
@@ -33,7 +35,7 @@ async function fetchComments(accessToken, videoId) {
 
         const data = await response.json();
         console.log(`Fetched ${data.items.length} comments for video ${videoId}.`);
-        return data.items;
+        return data.items; // Returns an array of commentThread resources
     } catch (error) {
         console.error('Error in fetchComments:', error);
         throw error;
@@ -58,6 +60,7 @@ async function postComment(accessToken, videoId, textContent, parentCommentId = 
 
     let requestBody;
     if (parentCommentId) {
+        // Construct request body for a reply to an existing comment
         requestBody = {
             snippet: {
                 parentId: parentCommentId,
@@ -66,6 +69,7 @@ async function postComment(accessToken, videoId, textContent, parentCommentId = 
             }
         };
     } else {
+        // Construct request body for a new top-level comment
         requestBody = {
             snippet: {
                 videoId: videoId,
@@ -109,6 +113,7 @@ async function getMyChannelId(accessToken) {
     console.log('DEBUG (getMyChannelId - before fetch): Type of fetch:', typeof fetch);
     // --- END DEBUGGING ---
 
+    // 'mine=true' indicates that we want the channel of the authenticated user.
     const url = `${YOUTUBE_API_BASE_URL}/channels?part=id&mine=true`;
     try {
         const response = await fetch(url, {
@@ -144,6 +149,9 @@ async function getMyChannelId(accessToken) {
  * @returns {Promise<Array>} A promise that resolves to an array of playlistItem resources.
  */
 async function fetchMyVideos(accessToken, channelId) {
+    // To get uploaded videos, we need the 'uploads' playlist ID for the channel.
+    // This is typically found in the channel's contentDetails.
+    // First, fetch channel details to get the uploads playlist ID.
     const channelDetailsUrl = `${YOUTUBE_API_BASE_URL}/channels?part=contentDetails&id=${channelId}`;
     let uploadsPlaylistId;
 
@@ -166,6 +174,9 @@ async function fetchMyVideos(accessToken, channelId) {
             throw new Error('Could not find uploads playlist for the channel.');
         }
 
+        // Now fetch items from the uploads playlist
+        // 'snippet' part includes video title, thumbnail, etc.
+        // maxResults can be up to 50.
         const playlistItemsUrl = `${YOUTUBE_API_BASE_URL}/playlistItems?part=snippet&playlistId=${uploadsPlaylistId}&maxResults=50`;
         const videoResponse = await fetch(playlistItemsUrl, {
             headers: {
@@ -181,12 +192,13 @@ async function fetchMyVideos(accessToken, channelId) {
 
         const videoData = await videoResponse.json();
         console.log(`Fetched ${videoData.items.length} videos from your channel.`);
-        return videoData.items;
+        return videoData.items; // Returns an array of playlistItem resources
     } catch (error) {
         console.error('Error in fetchMyVideos:', error);
         throw error;
     }
 }
+
 
 module.exports = {
     fetchComments,
