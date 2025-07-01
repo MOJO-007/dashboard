@@ -61,8 +61,6 @@ passport.serializeUser((user, done) => {
   done(null, user.id); // Pass the user's ID to be stored in the session
 });
 
-// deserializeUser: Retrieves the full user object based on the ID stored in the session.
-// This function is called on every request after the session is established.
 passport.deserializeUser((id, done) => {
   console.log('Deserializing user ID:', id);
   // In a real app, you'd fetch the user from your database using the ID.
@@ -222,10 +220,28 @@ app.get('/my-videos', ensureAuthenticated, async (req, res) => {
                         resize: vertical;
                         min-height: 60px;
                     }
-                    .reply-input-area button {
-                        align-self: flex-end;
-                        margin-top: 0;
+                    .reply-input-area .action-buttons { /* New class for reply area buttons */
+                        display: flex;
+                        justify-content: flex-end;
+                        gap: 5px;
                     }
+                    .reply-input-area .action-buttons button {
+                        margin-top: 0; /* Override previous margin-top */
+                    }
+                    .replies-container { /* New style for replies section */
+                        margin-top: 10px;
+                        padding-left: 20px;
+                        border-left: 2px solid #ccc;
+                    }
+                    .reply-item { /* New style for individual replies */
+                        background-color: #eaf7ff; /* Lighter blue for replies */
+                        border: 1px solid #d0eaff;
+                        padding: 8px;
+                        margin-bottom: 5px;
+                        border-radius: 5px;
+                        font-size: 0.9em;
+                    }
+                    .reply-item strong { color: #1a73e8; } /* Google blue for reply author */
                 </style>
             </head>
             <body>
@@ -276,12 +292,18 @@ app.get('/my-videos', ensureAuthenticated, async (req, res) => {
                                             <strong>\${author}</strong> <span style="font-size: 0.8em; color: #666;">(\${publishedAt})</span>
                                             <p id="comment-text-\${commentId}">\${text}</p>
                                             <button onclick="analyzeComment('\${commentId}')" style="background-color: #007bff;">Analyze</button>
-                                            <button onclick="showReplyInput('\${commentId}', '\${videoId}')" style="background-color: #ffc107; color: #333;">Reply</button>
+                                            <button id="reply-button-\${commentId}" onclick="toggleReplyInput('\${commentId}', '\${videoId}')" style="background-color: #ffc107; color: #333;">Reply</button>
+                                            <button id="show-replies-button-\${commentId}" onclick="toggleReplies('\${commentId}', this)" style="background-color: #607d8b;">Show Replies</button>
                                             <div id="analysis-result-\${commentId}" class="analysis-result" style="display: none;"></div>
                                             <div id="reply-input-\${commentId}" class="reply-input-area" style="display: none;">
                                                 <textarea id="reply-textarea-\${commentId}" placeholder="Type your reply here..."></textarea>
-                                                <button onclick="postReply('\${commentId}')" style="background-color: #28a745;">Post Reply</button>
-                                                <button onclick="hideReplyInput('\${commentId}')" style="background-color: #6c757d;">Cancel</button>
+                                                <div class="action-buttons">
+                                                    <button onclick="postReply('\${commentId}')" style="background-color: #28a745;">Post Reply</button>
+                                                    <button onclick="toggleReplyInput('\${commentId}', '\${videoId}')" style="background-color: #6c757d;">Cancel</button>
+                                                </div>
+                                            </div>
+                                            <div id="replies-container-\${commentId}" class="replies-container" style="display: none;">
+                                                Loading replies...
                                             </div>
                                         </div>
                                     \`;
@@ -325,28 +347,38 @@ app.get('/my-videos', ensureAuthenticated, async (req, res) => {
                         }
                     }
 
-                    // Function to show reply input field, now also passes videoId
-                    function showReplyInput(commentId, videoId) {
+                    // Function to toggle reply input field
+                    function toggleReplyInput(commentId, videoId) {
                         const replyInputArea = document.getElementById(\`reply-input-\${commentId}\`);
-                        replyInputArea.style.display = 'flex';
-                        document.getElementById(\`reply-textarea-\${commentId}\`).focus();
-                        // Store videoId on the textarea for easy access in postReply
-                        document.getElementById(\`reply-textarea-\${commentId}\`).dataset.videoId = videoId;
+                        const replyButton = document.getElementById(\`reply-button-\${commentId}\`);
+                        const replyTextarea = document.getElementById(\`reply-textarea-\${commentId}\`);
+
+                        if (replyInputArea.style.display === 'flex') {
+                            // Currently visible, so hide it
+                            replyInputArea.style.display = 'none';
+                            replyTextarea.value = ''; // Clear text
+                            delete replyTextarea.dataset.videoId; // Clean up stored videoId
+                            replyButton.textContent = 'Reply';
+                        } else {
+                            // Currently hidden, so show it
+                            replyInputArea.style.display = 'flex';
+                            replyTextarea.focus();
+                            replyTextarea.dataset.videoId = videoId; // Store videoId
+                            replyButton.textContent = 'Hide Reply';
+                        }
                     }
 
-                    // Function to hide reply input field
-                    function hideReplyInput(commentId) {
-                        const replyInputArea = document.getElementById(\`reply-input-\${commentId}\`);
-                        replyInputArea.style.display = 'none';
-                        document.getElementById(\`reply-textarea-\${commentId}\`).value = ''; // Clear text
-                        delete document.getElementById(\`reply-textarea-\${commentId}\`).dataset.videoId; // Clean up stored videoId
-                    }
-
-                    // Function to post a reply, now takes videoId
+                    // Function to post a reply
                     async function postReply(commentId) {
                         const replyTextarea = document.getElementById(\`reply-textarea-\${commentId}\`);
                         const replyText = replyTextarea.value;
                         const videoId = replyTextarea.dataset.videoId; // Get videoId from dataset
+
+                        // --- DEBUGGING: Log client-side values before sending ---
+                        console.log('DEBUG (client-side postReply): commentId:', commentId);
+                        console.log('DEBUG (client-side postReply): replyText (trimmed length):', replyText.trim().length);
+                        console.log('DEBUG (client-side postReply): videoId:', videoId);
+                        // --- END DEBUGGING ---
 
                         if (!replyText.trim()) {
                             alert('Reply cannot be empty.'); // Using alert here for simplicity, consider a custom modal
@@ -379,7 +411,8 @@ app.get('/my-videos', ensureAuthenticated, async (req, res) => {
                             }
 
                             alert('Reply posted successfully!'); // Using alert here for simplicity, consider a custom modal
-                            hideReplyInput(commentId); // Hide input after successful post
+                            // After successful reply, toggle the input area to hide it and reset the button
+                            toggleReplyInput(commentId, videoId); // Use toggle to reset
                             // Optionally, refresh comments for the video to see the new reply
                             // You might need to re-fetch comments for the video here
                         } catch (error) {
@@ -388,6 +421,57 @@ app.get('/my-videos', ensureAuthenticated, async (req, res) => {
                         } finally {
                             postButton.textContent = originalButtonText;
                             postButton.disabled = false;
+                        }
+                    }
+
+                    // NEW Function to toggle replies visibility
+                    async function toggleReplies(commentId, buttonElement) {
+                        const repliesContainer = document.getElementById(\`replies-container-\${commentId}\`);
+                        const isVisible = repliesContainer.style.display === 'block';
+
+                        if (isVisible) {
+                            repliesContainer.style.display = 'none';
+                            buttonElement.textContent = 'Show Replies';
+                            return;
+                        }
+
+                        repliesContainer.style.display = 'block';
+                        repliesContainer.innerHTML = 'Loading replies...';
+                        buttonElement.textContent = 'Loading...';
+                        buttonElement.disabled = true;
+
+                        try {
+                            const response = await fetch(\`/api/replies/\${commentId}\`);
+                            if (!response.ok) {
+                                const errorText = await response.text();
+                                throw new Error(\`HTTP error! status: \${response.status}. Details: \${errorText}\`);
+                            }
+                            const replies = await response.json();
+
+                            if (replies.length === 0) {
+                                repliesContainer.innerHTML = '<p>No replies found for this comment.</p>';
+                            } else {
+                                let repliesHtml = '<h5>Replies:</h5>';
+                                replies.forEach(reply => {
+                                    const author = reply.snippet.authorDisplayName;
+                                    const text = reply.snippet.textOriginal;
+                                    const publishedAt = new Date(reply.snippet.publishedAt).toLocaleString();
+
+                                    repliesHtml += \`
+                                        <div class="reply-item">
+                                            <strong>\${author}</strong> <span style="font-size: 0.8em; color: #666;">(\${publishedAt})</span>
+                                            <p>\${text}</p>
+                                        </div>
+                                    \`;
+                                });
+                                repliesContainer.innerHTML = repliesHtml;
+                            }
+                        } catch (error) {
+                            console.error('Error fetching replies:', error);
+                            repliesContainer.innerHTML = \`<p style="color: red;">Failed to load replies: \${error.message}.</p>\`;
+                        } finally {
+                            buttonElement.textContent = 'Hide Replies';
+                            buttonElement.disabled = false;
                         }
                     }
                 </script>
@@ -511,8 +595,14 @@ app.post('/api/reply-comment', ensureAuthenticated, async (req, res) => {
     // Retrieve videoId from a custom header sent by the client
     const videoId = req.headers['x-video-id'];
 
-    if (!commentId || !replyText || !videoId) {
-        return res.status(400).json({ error: 'Comment ID, reply text, and video ID are required.' });
+    // --- DEBUGGING: Log the received replyText ---
+    console.log('DEBUG (server.js - /api/reply-comment): Received replyText:', `"${replyText}"`);
+    console.log('DEBUG (server.js - /api/reply-comment): Trimmed replyText length:', replyText.trim().length);
+    // --- END DEBUGGING ---
+
+    if (!commentId || !replyText.trim() || !videoId) { // Ensure replyText is trimmed for emptiness check
+        console.error('Validation failed: Comment ID, non-empty reply text, and video ID are required.');
+        return res.status(400).json({ error: 'Comment ID, non-empty reply text, and video ID are required.' });
     }
     if (!accessToken) {
         return res.status(401).json({ error: 'Access token not found. Please re-authenticate.' });
@@ -524,6 +614,27 @@ app.post('/api/reply-comment', ensureAuthenticated, async (req, res) => {
     } catch (error) {
         console.error('Error posting reply:', error);
         res.status(500).json({ error: 'Failed to post reply.' });
+    }
+});
+
+// --- NEW API ROUTE: To fetch replies dynamically via AJAX ---
+app.get('/api/replies/:commentId', ensureAuthenticated, async (req, res) => {
+    const commentId = req.params.commentId;
+    const accessToken = userAccessTokens[req.user.id];
+
+    if (!commentId) {
+        return res.status(400).json({ error: 'Comment ID is required to fetch replies.' });
+    }
+    if (!accessToken) {
+        return res.status(401).json({ error: 'Access token not found. Please re-authenticate.' });
+    }
+
+    try {
+        const replies = await youtubeApi.fetchReplies(accessToken, commentId);
+        res.json(replies);
+    } catch (error) {
+        console.error(`Error fetching replies for comment ${commentId}:`, error);
+        res.status(500).json({ error: 'Failed to fetch replies.' });
     }
 });
 
@@ -549,7 +660,7 @@ app.get('/', (req, res) => {
             h1, h2, h3 { color: #2c3e50; margin-bottom: 15px; }
             p { margin-bottom: 10px; }
             a { color: #3498db; text-decoration: none; transition: color 0.3s ease; }
-            a:hover { color: #217dbb; text-decoration: underline; }
+            a:hover { text-decoration: underline; }
             button {
                 background-color: #2ecc71; /* Green for action */
                 color: white;

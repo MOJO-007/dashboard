@@ -1,6 +1,4 @@
 // services/youtubeApi.js
-// Explicitly destructure the 'default' export from node-fetch.
-// This is the most robust way to import node-fetch v3+ in CommonJS.
 const { default: fetch } = require('node-fetch');
 
 // --- DEBUGGING: Check if fetch is correctly loaded at module load time ---
@@ -10,7 +8,7 @@ console.log('DEBUG (youtubeApi.js - module load): Type of fetch:', typeof fetch)
 const YOUTUBE_API_BASE_URL = 'https://www.googleapis.com/youtube/v3';
 
 /**
- * Fetches comments for a given YouTube video.
+ * Fetches comments for a given YouTube video (top-level comments).
  * @param {string} accessToken - The OAuth 2.0 access token with YouTube scopes.
  * @param {string} videoId - The ID of the YouTube video.
  * @returns {Promise<Array>} A promise that resolves to an array of commentThread resources.
@@ -34,7 +32,7 @@ async function fetchComments(accessToken, videoId) {
         }
 
         const data = await response.json();
-        console.log(`Fetched ${data.items.length} comments for video ${videoId}.`);
+        console.log(`Fetched ${data.items.length} top-level comments for video ${videoId}.`);
         return data.items; // Returns an array of commentThread resources
     } catch (error) {
         console.error('Error in fetchComments:', error);
@@ -51,34 +49,41 @@ async function fetchComments(accessToken, videoId) {
  * @returns {Promise<Object>} A promise that resolves to the posted comment resource.
  */
 async function postComment(accessToken, videoId, textContent, parentCommentId = null) {
-    const url = `${YOUTUBE_API_BASE_URL}/commentThreads?part=snippet`;
-    const headers = {
-        'Authorization': `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-        'Accept': 'application/json'
-    };
-
+    let url;
     let requestBody;
+
     if (parentCommentId) {
-        // Construct request body for a reply to an existing comment
+        // For replies, use the 'comments' endpoint and include parentId directly in snippet
+        url = `${YOUTUBE_API_BASE_URL}/comments?part=snippet`;
         requestBody = {
             snippet: {
                 parentId: parentCommentId,
-                videoId: videoId,
-                textOriginal: textContent
+                textOriginal: textContent // For replies, textOriginal is directly under snippet
             }
         };
     } else {
-        // Construct request body for a new top-level comment
+        // For top-level comments, use the 'commentThreads' endpoint and include topLevelComment
+        url = `${YOUTUBE_API_BASE_URL}/commentThreads?part=snippet`;
         requestBody = {
             snippet: {
-                videoId: videoId,
+                videoId: videoId, // videoId is required for top-level comments
                 topLevelComment: {
                     textOriginal: textContent
                 }
             }
         };
     }
+
+    const headers = {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+    };
+
+    // --- DEBUGGING: Log the request body before sending to YouTube API ---
+    console.log('DEBUG (youtubeApi.js - postComment): Sending requestBody:', JSON.stringify(requestBody, null, 2));
+    console.log('DEBUG (youtubeApi.js - postComment): Sending to URL:', url);
+    // --- END DEBUGGING ---
 
     try {
         const response = await fetch(url, {
@@ -88,9 +93,17 @@ async function postComment(accessToken, videoId, textContent, parentCommentId = 
         });
 
         if (!response.ok) {
-            const errorData = await response.json();
+            const errorText = await response.text();
+            let errorData;
+            try {
+                errorData = JSON.parse(errorText);
+            } catch (jsonError) {
+                errorData = { message: `Could not parse error response as JSON: ${errorText}` };
+            }
+
             console.error('YouTube API Error (postComment):', errorData);
-            throw new Error(`Failed to post comment: ${response.status} - ${errorData.error.message || response.statusText}`);
+            console.error('YouTube API Raw Error Response Text:', errorText);
+            throw new Error(`Failed to post comment: ${response.status} - ${errorData.error?.message || response.statusText || errorData.message}`);
         }
 
         const data = await response.json();
@@ -199,10 +212,42 @@ async function fetchMyVideos(accessToken, channelId) {
     }
 }
 
+/**
+ * Fetches replies to a specific comment.
+ * @param {string} accessToken - The OAuth 2.0 access token.
+ * @param {string} parentId - The ID of the parent comment.
+ * @returns {Promise<Array>} A promise that resolves to an array of comment resources (replies).
+ */
+async function fetchReplies(accessToken, parentId) {
+    // Use the 'comments' endpoint and filter by 'parentId' to get replies.
+    const url = `${YOUTUBE_API_BASE_URL}/comments?part=snippet&parentId=${parentId}&maxResults=100`;
+    try {
+        const response = await fetch(url, {
+            headers: {
+                'Authorization': `Bearer ${accessToken}`,
+                'Accept': 'application/json'
+            }
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            console.error('YouTube API Error (fetchReplies):', errorData);
+            throw new Error(`Failed to fetch replies: ${response.status} - ${errorData.error.message || response.statusText}`);
+        }
+
+        const data = await response.json();
+        console.log(`Fetched ${data.items.length} replies for comment ${parentId}.`);
+        return data.items; // Returns an array of comment resources
+    } catch (error) {
+        console.error('Error in fetchReplies:', error);
+        throw error;
+    }
+}
 
 module.exports = {
     fetchComments,
     postComment,
     getMyChannelId,
-    fetchMyVideos
+    fetchMyVideos,
+    fetchReplies // Export the new function
 };
